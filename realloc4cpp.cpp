@@ -1,35 +1,12 @@
-#include<memory>
+#include"reallocator.h"
+#include"allocator_traits.h"
 #include<utility>
 #include<iterator>
 #include<cassert>
 
-namespace cpp_realloc {
+namespace realloc4cpp {
 
-//////////////////////////////////////////////////////////////////////////////
-// Extended allocator_traits interface
-template<class Alloc>
-struct realloc_allocator_traits : public std::allocator_traits<Alloc>
-{
-    using pointer = typename std::allocator_traits<Alloc>::pointer;
-    using size_type = typename std::allocator_traits<Alloc>::size_type;
-
-    // `p` is a pointer to the memory block allocated before
-    // `cur_size` is a current size of the memory block
-    // `new_size` is IN/OUT parameter:
-    //      IN: requested size
-    //     OUT: reallocated size, in case of success (true) returned
-    // Returns:
-    //     false - cannot satisfy this request
-    //      true - memory block was enlarged/narrowed. In case of enlarge-request
-    //             returned `new_size` can be equal or greater than requested
-    static bool resize_allocated(
-        Alloc &a, pointer p, size_type cur_size, size_type &new_size)
-    {
-        // TODO: Return a.resize_allocated(p, cur_size, new_size) if defined
-        return false;
-    }
-};
-//////////////////////////////////////////////////////////////////////////////
+unsigned long realloc_attempts = 0, successful_reallocs = 0;
 
 //////////////////////////////////////////////////////////////////////////////
 // Fixed-size memory buffer, can grow
@@ -37,14 +14,14 @@ template<class T, class Allocator = std::allocator<T>>
 class raw_buffer : private Allocator
 {
     T *begin_, *end_;
-    using alloc_traits = realloc_allocator_traits<Allocator>;
+    using A = allocator_traits<Allocator>;
 public:
-    using size_type = typename alloc_traits::size_type;
+    using size_type = typename A::size_type;
 
     constexpr raw_buffer() : begin_(nullptr), end_(begin_) {}
     explicit raw_buffer(size_type initial_capacity)
     :
-        begin_(alloc_traits::allocate(*this, initial_capacity)),
+        begin_(A::allocate(*this, initial_capacity)),
         end_(begin_ + initial_capacity)
     {
     }
@@ -55,7 +32,7 @@ public:
     raw_buffer(const raw_buffer & ) = delete;
     ~raw_buffer()
     {
-        if(begin_) alloc_traits::deallocate(*this, begin_, capacity());
+        if(begin_) A::deallocate(*this, begin_, capacity());
     }
 
     raw_buffer &operator=(raw_buffer &&o) noexcept { swap(o); }
@@ -68,22 +45,31 @@ public:
     auto begin() const { return begin_; }
     auto end() const { return end_; }
 
+    bool resize(size_type new_capacity, size_type min_new_capacity)
+    {
+        assert(new_capacity >= min_new_capacity);
+        realloc_attempts++;
+        auto n = new_capacity;
+        if(!A::resize_allocated(*this,
+                begin_, capacity(), n, min_new_capacity))
+            return false;
+        assert(new_capacity > capacity() ?
+            n >= new_capacity || n >= min_new_capacity : true);
+        end_ = begin_ + n;
+        successful_reallocs++;
+        return true;
+    }
     bool resize(size_type new_capacity)
     {
-        auto n = new_capacity;
-        if(!alloc_traits::resize_allocated(*this, begin_, capacity(), n))
-            return false;
-        assert(new_capacity > capacity() ? n >= new_capacity : true);
-        end_ = begin_ + n;
-        return true;
+        return resize(new_capacity, new_capacity);
     }
 
     template<class... Args>
     void construct(T *p, Args &&... args)
     {
-        alloc_traits::construct(*this, p, std::forward<Args>(args)...);
+        A::construct(*this, p, std::forward<Args>(args)...);
     }
-    void destroy(T *p) { alloc_traits::destroy(*this, p); }
+    void destroy(T *p) { A::destroy(*this, p); }
     void swap(raw_buffer &o) noexcept
     {
         std::swap(begin_, o.begin_);
@@ -102,7 +88,7 @@ class autogrow_array
     auto new_capacity() const
     {
         // TODO: Add your grow algo here
-        return capacity() + 1;
+        return capacity() * 2U;
     }
 public:
     using value_type = T;
@@ -129,8 +115,10 @@ public:
 //////////////////////////////////////////////////////////////////////////////
 //----------------------------------------------------------------------------
 template<class T, class A>
-autogrow_array<T,A>::autogrow_array(size_type initial_capacity)
-    : buf(initial_capacity)
+autogrow_array<T,A>::autogrow_array(size_type initial_size)
+:
+    buf(initial_size),
+    next(std::uninitialized_fill_n(buf.begin(), initial_size, T{}))
 {
 }
 //----------------------------------------------------------------------------
@@ -160,7 +148,7 @@ void autogrow_array<T,A>::push_back(T v)
     if(next == buf.end()) // increase capacity first
     {
         auto desired_capacity = new_capacity();
-        if(buf.resize(desired_capacity))
+        if(buf.resize(desired_capacity, 1))
         {
             // AWESOME!!! Buffer was enlarged!
             // No need to move existing elements!
@@ -209,33 +197,60 @@ void autogrow_array<T,A>::shrink_to_fit()
 
 #include<iostream>
 
+inline unsigned long long rdtsc()
+{
+    unsigned aux;
+    return __builtin_ia32_rdtscp(&aux);
+}
+
 int main()
 {
-    using namespace cpp_realloc;
-    autogrow_array<int> arr(2);
+    using namespace realloc4cpp;
+    // Chunks <16KiB are allocated using slabs and cannot be resized so we
+    // start with this minimal size (http://jemalloc.net/jemalloc.3.html)
+    autogrow_array<int
+#if 1
+        , reallocator<int>
+#endif
+    > arr(4U << 10);
     std::cout << "capacity = " << arr.capacity() << ", size = " << arr.size() << '\n';
 
     std::cout << "Add element\n";
+    auto t1 = rdtsc();
     arr.push_back(1);
-    std::cout << "capacity = " << arr.capacity() << ", size = " << arr.size() << '\n';
+    auto t2 = rdtsc();
+    std::cout << "capacity = " << arr.capacity() << ", size = " << arr.size() << ", time: " << (t2 - t1) << '\n';
 
     std::cout << "Add element\n";
+    t1 = rdtsc();
     arr.push_back(2);
-    std::cout << "capacity = " << arr.capacity() << ", size = " << arr.size() << '\n';
+    t2 = rdtsc();
+    std::cout << "capacity = " << arr.capacity() << ", size = " << arr.size() << ", time: " << (t2 - t1) << '\n';
 
     std::cout << "Add element\n";
+    t1 = rdtsc();
     arr.push_back(3);
-    std::cout << "capacity = " << arr.capacity() << ", size = " << arr.size() << '\n';
+    t2 = rdtsc();
+    std::cout << "capacity = " << arr.capacity() << ", size = " << arr.size() << ", time: " << (t2 - t1) << '\n';
 
     std::cout << "Add element\n";
+    t1 = rdtsc();
     arr.push_back(4);
-    std::cout << "capacity = " << arr.capacity() << ", size = " << arr.size() << '\n';
+    t2 = rdtsc();
+    std::cout << "capacity = " << arr.capacity() << ", size = " << arr.size() << ", time: " << (t2 - t1) << '\n';
 
     std::cout << "Remove element\n";
+    t1 = rdtsc();
     arr.pop_back();
-    std::cout << "capacity = " << arr.capacity() << ", size = " << arr.size() << '\n';
+    t2 = rdtsc();
+    std::cout << "capacity = " << arr.capacity() << ", size = " << arr.size() << ", time: " << (t2 - t1) << '\n';
 
     std::cout << "Shrink ot fit\n";
+    t1 = rdtsc();
     arr.shrink_to_fit();
-    std::cout << "capacity = " << arr.capacity() << ", size = " << arr.size() << '\n';
+    t2 = rdtsc();
+    std::cout << "capacity = " << arr.capacity() << ", size = " << arr.size() << ", time: " << (t2 - t1) << '\n';
+
+    std::cout << successful_reallocs << " of " << realloc_attempts <<
+        " successful reallocations\n";
 }

@@ -1,8 +1,9 @@
 ```
-Document number: P0894R0
+Document number: P0894R1
 Audience: Library Evolution Working Group
+Link: https://github.com/2underscores-vic/realloc4cpp/blob/P0894R1/realloc4cpp.md
 Reply to: Victor Dyachenko <__vic@ngs.ru>
-Date: 2018-01-10
+Date: 2018-12-12
 ```
 
 # `realloc()` for C++
@@ -33,7 +34,7 @@ generic code. However the ability to resize already allocated memory block can
 be very useful. We could potentially get performance and safety gain:
 no need to move the existing data (performance) and consequently no risk
 to cause an exception by throwing move-operation (safety). Yes, it cannot be
-guaranteed that every resize-request will be satisfied (it won't usually in
+guaranteed that every resize request will be satisfied (it won't usually in
 fact). And what do we do in such case? All we do today! Just fall back to the
 current technics.
 
@@ -57,7 +58,8 @@ I propose to extend `std::allocator_traits` with additional function:
 template<class Alloc>
 struct std::allocator_traits
 {
-    static bool resize_allocated(Alloc &a, pointer p, size_type cur_size, size_type new_size);
+    [[nodiscard]] static bool resize_allocated(
+        Alloc &a, pointer p, size_type cur_size, size_type new_size);
 };
 ```
 
@@ -68,9 +70,9 @@ well-formed; otherwise, just returns `false`. Returned `true` means that:
 2. The memory block length was changed, and
 3. It is at least `new_size` bytes length.
 
-The main difference with `realloc()`'s behaivour is that the allocator doesn't
+The main difference with `realloc()`'s behaivour is that an allocator doesn't
 try to move any data, it is a caller's responsibility, the allocator just reports
-the success.
+the success status.
 
 ## [P0401 - Extensions to the Allocator interface](http://www.open-std.org/jtc1/sc22/wg21/docs/papers/2016/p0401r0.html) by Jonathan Wakely (Bonus)
 
@@ -82,12 +84,18 @@ allocated block. It can be combined with the idea from the original proposal:
 template<class Alloc>
 struct std::allocator_traits
 {
-    static bool resize_allocated(Alloc &a, pointer p, size_type cur_size, size_type &new_size);
+    [[nodiscard]] static bool resize_allocated(
+        Alloc &a, pointer p, size_type cur_size, size_type &new_size);
 };
 ```
 
 Now `new_size` is an input/output parameter. In case of success the allocator
 can round up the requested size.
+
+Note: The Standard Library allocators operate in terms of `sizeof(T)` elements
+but general purpose memory allocators usually operate in bytes. So it's an open
+question what to do when memory allocator returned a value that isn't a multiple
+of `sizeof(T)`.
 
 ## [N3495 - inplace realloc](http://www.open-std.org/jtc1/sc22/wg21/docs/papers/2013/n3495.htm)
 
@@ -100,7 +108,7 @@ success or not.
 ## Usage (code)
 
 The sample of usage with vector-like container (including the extension from
-P0401) can be found [here](https://github.com/2underscores-vic/articles/blob/master/realloc4cpp/realloc4cpp.cpp).
+P0401) can be found [here](https://github.com/2underscores-vic/realloc4cpp/tree/P0894R1).
 
 ### Scenario 1: grow
 
@@ -169,6 +177,17 @@ if(!buf.resize(new_size()))
     allocate_new_buffer_and_move_data();
 ```
 
+If the allocator used doesn't implement `resize_allocated()` function
+then `alloc_traits::resize_allocated()` call (and thus `buf.resize()`)
+effectively turns into `if(!false)` so a smart enough compiler can
+elliminate this fake check completely in the generated code.
+
+The worst performance impact is in the case when allocator defines
+`resize_allocated()` but always returns `false` and the call can't be inlined.
+In such cases we will have additional (unsuccessful) function call plus
+additional condition check. But if allocator is know in advance not being able
+to resize allocated memory block it just shouldn't define `resize_allocated()`.
+
 ## Preferred and minimum requested size (Bonus #2)
 
 It was suggested by Fabio Fracassi in
@@ -193,10 +212,11 @@ The extension can have the following form (all in one):
 template<class Alloc>
 struct std::allocator_traits
 {
-    static bool resize_allocated(Alloc &a, pointer p, size_type cur_size,
-        size_type &new_size);
-    static bool resize_allocated(Alloc &a, pointer p, size_type cur_size,
-        size_type &preferred_size, size_type min_size);
+    [[nodiscard]] static bool resize_allocated(
+        Alloc &a, pointer p, size_type cur_size, size_type &new_size);
+    [[nodiscard]] static bool resize_allocated(
+        Alloc &a, pointer p, size_type cur_size, size_type &preferred_size,
+        size_type min_size);
 };
 ```
 
@@ -204,7 +224,13 @@ The first function calls `a.resize_allocated(p, cur_size, new_size)` if
 well-formed; otherwise calls `resize_allocated(a, p, cur_size, new_size,
 new_size)`.
 
-And in my example for `push_back()` the call
+The second function calls `a.resize_allocated(p, cur_size, preferred_size,
+min_size)` if well-formed. Otherwise if expession `a.resize_allocated(p,
+cur_size, preferred_size)` is well-formed calls that. If the call failed and
+`at_least_size != preferred_size` assigns `preferred_size = at_least_size`
+and calls the expression again.
+
+In my example for `push_back()` the call
 
 ```C++
 buf.resize(new_capacity())
@@ -216,6 +242,191 @@ becomes
 buf.resize(new_capacity(), 1)
 ```
 
+## Howard Hinnant's stack_alloc and other arena/monotonic allocators
+
+Howard Hinnant has proposed one ingenious trick to make STL containers allocate
+the elements [on stack](https://howardhinnant.github.io/stack_alloc.html). It
+uses monotonic buffer allocated on the stack and heap is used on its exhaustion.
+
+When we preallocate 200 bytes buffer for vector of 4-byte `int`s we expect that
+200 / 4 = **50** elements can be allocated on the stack without heap usage. But
+if we run the test (see the link above) we will be disappoined... On my machine
+I discover the buffer exhaustion after inserting the 17th element. Why?
+
+Because of GNU libstc++ vector's growth strategy and constant buffer relocations.
+vector's capacity is doubled on each reallocation and there is always the moment
+when both old and new buffer occupy a memory. So we have the following picture:
+
+```
++++++++++++++++++++++++++++++++++++++++++++++++++ 50
+* 1
+ ** 2
+   **** 4
+       ******** 8
+               **************** 16
+                               ******************************** 32
+```
+
+The buffer is exhaused on attempt to allocate 32 elements. 1+2+4+8+16=31 memory
+cells just can't be reused because `deallocate()` call is a dummy.
+
+If we let the buffer just grow the picture become:
+
+```
++++++++++++++++++++++++++++++++++++++++++++++++++ 50
+************************************************* 50
+```
+
+or
+
+```
++++++++++++++++++++++++++++++++++++++++++++++++++ 50
+* 1
+** 2
+**** 4
+******** 8
+**************** 16
+******************************** 32
+********************************* 33
+********************************** 34
+...
+************************************************* 50
+```
+
+Now at least 32 elements can be allocated with the bare minimun proposal.
+And all 50 if allocator adjusts the first call to 50 elements (bonus #1)
+or vector always adds `min_size = 1` to every memory request (bonus #2).
+
+## Existing practice, implementation experience and benchmarks
+
+The functionality is available today in [jemalloc](http://jemalloc.net/)
+allocator. It has `xmallocx()` function that almost literally implements the
+required functionality:
+
+```C
+size_t xallocx(void *ptr, size_t size, size_t extra, int flags);
+```
+
+> The xallocx() function resizes the allocation at ptr in place to be at least
+> size bytes, and returns the real size of the allocation. If extra is non-zero,
+> an attempt is made to resize the allocation to be at least (size + extra) bytes,
+> though inability to allocate the extra byte(s) will not by itself result in
+> failure to resize.
+
+Facebook has class [`folly::fbvector`](https://github.com/facebook/folly/blob/master/folly/FBVector.h)
+that is [able](https://github.com/facebook/folly/blob/master/folly/docs/FBVector.md#the-jemalloc-connection)
+to use [this function](https://github.com/facebook/folly/blob/v2018.12.10.00/folly/FBVector.h#L1634)
+to expand the capacity. We can do the same in STL but in allocator-agnostic way
+using an allocator like this:
+
+```C++
+template<class T>
+struct reallocator
+{
+    using value_type = T;
+    using size_type = std::size_t;
+    using is_always_equal = std::true_type;
+
+    reallocator() = default;
+    template<class U>
+    constexpr reallocator(const reallocator<U> &) noexcept {}
+
+    [[nodiscard]] T *allocate(size_type n)
+    {
+        void *p = je_mallocx(n * sizeof(T), 0);
+        if(!p) throw std::bad_alloc();
+        return static_cast<T*>(p);
+    }
+    void deallocate(T *p, size_type n)
+    {
+        je_sdallocx(p, n, 0);
+    }
+    [[nodiscard]] bool resize_allocated(T *p,
+        size_type cur_size, size_type &preferred_size, size_type at_least_size)
+    {
+        auto new_size_bytes = je_xallocx(p,
+            at_least_size * sizeof(T),
+            (preferred_size - at_least_size) * sizeof(T),
+            0
+        );
+        auto new_size = new_size_bytes / sizeof(T);
+        if(new_size > cur_size)
+        {
+            preferred_size = new_size;
+            return true;
+        }
+        return false;
+    }
+};
+template<class U, class V>
+inline bool operator==(reallocator<U>, reallocator<V>) { return true; }
+template<class U, class V>
+inline bool operator!=(reallocator<U>, reallocator<V>) { return false; }
+```
+
+But are there any real benefits in the performance? Let's try to figure this out.
+We will use vector-like container aware of our `resize_allocated()` function with
+`std::allocator` and then with `reallocator`. Measurement will be done for single
+`push_back()` call in situation when `size() == capacity()` in CPU clocks 10 times.
+
+Results for `int` elements:
+
+```
+std::allocator: 25166 | 29296 | 25784 | 25052 | 26060 | 25402 | 24776 | 24774 | 24622 | 24552
+reallocator:    13302 |  8650 |  8594 |  8124 |  8300 | 10826 |  8794 |  8708 |  8518 |  8650
+```
+
+The mean values are:
+
+- 25548 for `std::allocator` vs
+- 9246 for `reallocator` with successfull in-place expansion
+
+so `reallocator` gives us **2.76** times performance gain on successful expansion
+call.
+
+But let's try the same but for heavier object like `std::string`. The results
+in the same test case:
+
+```
+std::allocator: 124588 | 118914 | 119290 | 117594 | 143100 | 118296 | 119214 | 117896 | 116890 | 118542
+reallocator:     14694 |  10526 |  10318 |  10234 |  10730 |  10466 |  10825 |  11184 |  10804 |  10874
+```
+
+The mean values are:
+
+- 121432 for `std::allocator` vs
+- 11066 for `reallocator`
+
+and performance gain is now **10.97** times!
+
+Benchmark conditions:
+
+CPU: Intel(R) Xeon(R) CPU E5-2690 v4 @ 2.60GHz (64 bit)
+OS: CentOS Linux release 7.0.1406 (kernel 3.10.0-327.el7.x86_64)
+jemalloc: v 5.1.0 (statically linked)
+compiler: GCC v 8.2 (-O3 -flto)
+
+## Summary: What is proposed?
+
+1. Add one of the proposed forms of `resize_allocated()` to `std::allocator_traits`
+   (we recommend bonus #2 with or w/o bonus #1).
+2. Make `std::vector` and `std::string` use `std::allocator_traits::resize_allocated()`.
+
+This two adoptions are enough to give the users an opportunity to effectively
+use the standard containers with custom allocators like jemalloc or some sort
+of arena/monotonic allocator. At the moment users have to use custom ad-hoc
+containers like `folly::fbvector`. So advanced users can benefit in the short
+run.
+
+But it would be much better for the users while not being aware of allocators
+at all still automatically use the feature every time they use `std::vector` or
+`std::string`. To achieve that we need to
+
+3. Add `resize_allocated()` to `std::allocator` either mandatory or up to
+   the library implementation.
+
+The last item of the proposal is good to have but it can be postponed.
+
 ## Acknowledgements
 
 Thanks to Antony Polukhin for representing this proposal in the Committee and
@@ -226,21 +437,63 @@ Thanks to Fabio Fracassi for his feedback on std-proposals forum.
 ## Annex A. Sample code
 
 ```C++
-#include<memory>
-#include<utility>
-#include<iterator>
-#include<cassert>
+#ifndef __ALLOCATOR_TRAITS_H
+#define __ALLOCATOR_TRAITS_H
 
-namespace cpp_realloc {
+#include<memory>
+
+namespace realloc4cpp {
 
 //////////////////////////////////////////////////////////////////////////////
 // Extended allocator_traits interface
 template<class Alloc>
-struct realloc_allocator_traits : public std::allocator_traits<Alloc>
+struct allocator_traits : public std::allocator_traits<Alloc>
 {
-    using pointer = typename std::allocator_traits<Alloc>::pointer;
-    using size_type = typename std::allocator_traits<Alloc>::size_type;
+    using typename std::allocator_traits<Alloc>::pointer;
+    using typename std::allocator_traits<Alloc>::size_type;
+private:
+    template<class Alloc2>
+    static auto resize_allocated_at_least(
+        Alloc2 &a, pointer p, size_type cur_size,
+        size_type &preferred_size, size_type at_least_size, int)
+    -> decltype(a.resize_allocated(p, cur_size, preferred_size, at_least_size))
+    {
+        return a.resize_allocated(p, cur_size, preferred_size, at_least_size);
+    }
+    template<class Alloc2>
+    static auto resize_allocated_at_least(
+        Alloc2 &a, pointer p, size_type cur_size,
+        size_type &preferred_size, size_type at_least_size, int)
+    -> decltype(a.resize_allocated(p, cur_size, preferred_size))
+    {
+        auto new_size = preferred_size;
+        if(a.resize_allocated(p, cur_size, preferred_size)) return true;
+        if(at_least_size == new_size) return false;
+        preferred_size = at_least_size;
+        return a.resize_allocated(p, cur_size, preferred_size);
+    }
 
+    template<class Alloc2>
+    static bool resize_allocated_at_least(
+        Alloc2 & , pointer , size_type , size_type & , size_type , ...)
+    {
+        return false;
+    }
+
+    template<class Alloc2>
+    static auto resize_allocated_exact(
+        Alloc2 &a, pointer p, size_type cur_size, size_type &new_size, int)
+    -> decltype(a.resize_allocated(p, cur_size, new_size))
+    {
+        return a.resize_allocated(p, cur_size, new_size);
+    }
+    template<class Alloc2>
+    static bool resize_allocated_exact(
+        Alloc2 &a, pointer p, size_type cur_size, size_type &new_size, ...)
+    {
+        return resize_allocated_at_least(a, p, cur_size, new_size, new_size);
+    }
+public:
     // `p` is a pointer to the memory block allocated before
     // `cur_size` is a current size of the memory block
     // `new_size` is IN/OUT parameter:
@@ -250,14 +503,112 @@ struct realloc_allocator_traits : public std::allocator_traits<Alloc>
     //     false - cannot satisfy this request
     //      true - memory block was enlarged/narrowed. In case of enlarge-request
     //             returned `new_size` can be equal or greater than requested
-    static bool resize_allocated(
-        Alloc &a, pointer p, size_type cur_size, size_type &new_size)
+    // Evaluates and returns the result of the the first
+    // well-formed expession in the following order:
+    //     1) a.resize_allocated(p, cur_size, new_size)
+    //     2) a.resize_allocated(p, cur_size, new_size, new_size)
+    //     3) false
+    [[nodiscard]] static bool resize_allocated(Alloc &a, pointer p,
+        size_type cur_size, size_type &new_size)
     {
-        // TODO: Return a.resize_allocated(p, cur_size, new_size) if defined
+        return resize_allocated_exact(a, p, cur_size, new_size, 0);
+    }
+
+    // Same as above but tries `preferred_size` as a `new_size` first
+    // If failed tries `at_least_size` when  `at_least_size` != `preferred_size`
+    // 1) If expression
+    //    a.resize_allocated(p, cur_size, preferred_size, at_least_size)
+    //    is well-formed calls and returns that;
+    // 2) Otherwise if expession
+    //    a.resize_allocated(p, cur_size, preferred_size)
+    //    is well-formed calls that. If the call failed and
+    //    at_least_size != preferred_size (initial value) assigns
+    //    preferred_size = at_least_size and calls the expression again;
+    // 3) Otherwise returns false.
+    [[nodiscard]] static bool resize_allocated(Alloc &a, pointer p,
+        size_type cur_size, size_type &preferred_size, size_type at_least_size)
+    {
+        return resize_allocated_at_least(a, p,
+            cur_size, preferred_size, at_least_size, 0);
+    }
+};
+//////////////////////////////////////////////////////////////////////////////
+
+} // namespace
+
+#endif // header guard
+```
+
+```C++
+#ifndef __REALLOCATOR_H
+#define __REALLOCATOR_H
+
+#include<new>
+#include<type_traits>
+#include<jemalloc/jemalloc.h>
+
+namespace realloc4cpp {
+
+//////////////////////////////////////////////////////////////////////////////
+template<class T>
+struct reallocator
+{
+    using value_type = T;
+    using size_type = std::size_t;
+    using is_always_equal = std::true_type;
+
+    reallocator() = default;
+    template<class U>
+    constexpr reallocator(const reallocator<U> &) noexcept {}
+
+    [[nodiscard]] T *allocate(size_type n)
+    {
+        void *p = je_mallocx(n * sizeof(T), 0);//MALLOCX_ALIGN(alignof(T)));
+        if(!p) throw std::bad_alloc();
+        return static_cast<T*>(p);
+    }
+    void deallocate(T *p, size_type n)
+    {
+        je_sdallocx(p, n, 0);
+    }
+    [[nodiscard]] bool resize_allocated(T *p,
+        size_type cur_size, size_type &preferred_size, size_type at_least_size)
+    {
+        auto new_size_bytes = je_xallocx(p,
+            at_least_size * sizeof(T),
+            (preferred_size - at_least_size) * sizeof(T),
+            0//MALLOCX_ALIGN(alignof(T))
+        );
+        auto new_size = new_size_bytes / sizeof(T);
+        if(new_size > cur_size)
+        {
+            preferred_size = new_size;
+            return true;
+        }
         return false;
     }
 };
 //////////////////////////////////////////////////////////////////////////////
+template<class U, class V>
+inline bool operator==(reallocator<U>, reallocator<V>) { return true; }
+template<class U, class V>
+inline bool operator!=(reallocator<U>, reallocator<V>) { return false; }
+
+} // namespace
+
+#endif // header guard
+```
+
+```C++
+#include"reallocator.h"
+#include"allocator_traits.h"
+#include<utility>
+#include<iterator>
+#include<cassert>
+
+namespace realloc4cpp {
+
+unsigned long realloc_attempts = 0, successful_reallocs = 0;
 
 //////////////////////////////////////////////////////////////////////////////
 // Fixed-size memory buffer, can grow
@@ -265,14 +616,14 @@ template<class T, class Allocator = std::allocator<T>>
 class raw_buffer : private Allocator
 {
     T *begin_, *end_;
-    using alloc_traits = realloc_allocator_traits<Allocator>;
+    using A = allocator_traits<Allocator>;
 public:
-    using size_type = typename alloc_traits::size_type;
+    using size_type = typename A::size_type;
 
     constexpr raw_buffer() : begin_(nullptr), end_(begin_) {}
     explicit raw_buffer(size_type initial_capacity)
     :
-        begin_(alloc_traits::allocate(*this, initial_capacity)),
+        begin_(A::allocate(*this, initial_capacity)),
         end_(begin_ + initial_capacity)
     {
     }
@@ -283,7 +634,7 @@ public:
     raw_buffer(const raw_buffer & ) = delete;
     ~raw_buffer()
     {
-        if(begin_) alloc_traits::deallocate(*this, begin_, capacity());
+        if(begin_) A::deallocate(*this, begin_, capacity());
     }
 
     raw_buffer &operator=(raw_buffer &&o) noexcept { swap(o); }
@@ -296,22 +647,31 @@ public:
     auto begin() const { return begin_; }
     auto end() const { return end_; }
 
+    bool resize(size_type new_capacity, size_type min_new_capacity)
+    {
+        assert(new_capacity >= min_new_capacity);
+        realloc_attempts++;
+        auto n = new_capacity;
+        if(!A::resize_allocated(*this,
+                begin_, capacity(), n, min_new_capacity))
+            return false;
+        assert(new_capacity > capacity() ?
+            n >= new_capacity || n >= min_new_capacity : true);
+        end_ = begin_ + n;
+        successful_reallocs++;
+        return true;
+    }
     bool resize(size_type new_capacity)
     {
-        auto n = new_capacity;
-        if(!alloc_traits::resize_allocated(*this, begin_, capacity(), n))
-            return false;
-        assert(new_capacity > capacity() ? n >= new_capacity : true);
-        end_ = begin_ + n;
-        return true;
+        return resize(new_capacity, new_capacity);
     }
 
     template<class... Args>
     void construct(T *p, Args &&... args)
     {
-        alloc_traits::construct(*this, p, std::forward<Args>(args)...);
+        A::construct(*this, p, std::forward<Args>(args)...);
     }
-    void destroy(T *p) { alloc_traits::destroy(*this, p); }
+    void destroy(T *p) { A::destroy(*this, p); }
     void swap(raw_buffer &o) noexcept
     {
         std::swap(begin_, o.begin_);
@@ -330,7 +690,7 @@ class autogrow_array
     auto new_capacity() const
     {
         // TODO: Add your grow algo here
-        return capacity() + 1;
+        return capacity() * 2U;
     }
 public:
     using value_type = T;
@@ -357,8 +717,10 @@ public:
 //////////////////////////////////////////////////////////////////////////////
 //----------------------------------------------------------------------------
 template<class T, class A>
-autogrow_array<T,A>::autogrow_array(size_type initial_capacity)
-    : buf(initial_capacity)
+autogrow_array<T,A>::autogrow_array(size_type initial_size)
+:
+    buf(initial_size),
+    next(std::uninitialized_fill_n(buf.begin(), initial_size, T{}))
 {
 }
 //----------------------------------------------------------------------------
@@ -388,7 +750,7 @@ void autogrow_array<T,A>::push_back(T v)
     if(next == buf.end()) // increase capacity first
     {
         auto desired_capacity = new_capacity();
-        if(buf.resize(desired_capacity))
+        if(buf.resize(desired_capacity, 1))
         {
             // AWESOME!!! Buffer was enlarged!
             // No need to move existing elements!
@@ -437,34 +799,61 @@ void autogrow_array<T,A>::shrink_to_fit()
 
 #include<iostream>
 
+inline unsigned long long rdtsc()
+{
+    unsigned aux;
+    return __builtin_ia32_rdtscp(&aux);
+}
+
 int main()
 {
-    using namespace cpp_realloc;
-    autogrow_array<int> arr(2);
+    using namespace realloc4cpp;
+    // Chunks <16KiB are allocated using slabs and cannot be resized so we
+    // start with this minimal size (http://jemalloc.net/jemalloc.3.html)
+    autogrow_array<int
+#if 1
+        , reallocator<int>
+#endif
+    > arr(4U << 10);
     std::cout << "capacity = " << arr.capacity() << ", size = " << arr.size() << '\n';
 
     std::cout << "Add element\n";
+    auto t1 = rdtsc();
     arr.push_back(1);
-    std::cout << "capacity = " << arr.capacity() << ", size = " << arr.size() << '\n';
+    auto t2 = rdtsc();
+    std::cout << "capacity = " << arr.capacity() << ", size = " << arr.size() << ", time: " << (t2 - t1) << '\n';
 
     std::cout << "Add element\n";
+    t1 = rdtsc();
     arr.push_back(2);
-    std::cout << "capacity = " << arr.capacity() << ", size = " << arr.size() << '\n';
+    t2 = rdtsc();
+    std::cout << "capacity = " << arr.capacity() << ", size = " << arr.size() << ", time: " << (t2 - t1) << '\n';
 
     std::cout << "Add element\n";
+    t1 = rdtsc();
     arr.push_back(3);
-    std::cout << "capacity = " << arr.capacity() << ", size = " << arr.size() << '\n';
+    t2 = rdtsc();
+    std::cout << "capacity = " << arr.capacity() << ", size = " << arr.size() << ", time: " << (t2 - t1) << '\n';
 
     std::cout << "Add element\n";
+    t1 = rdtsc();
     arr.push_back(4);
-    std::cout << "capacity = " << arr.capacity() << ", size = " << arr.size() << '\n';
+    t2 = rdtsc();
+    std::cout << "capacity = " << arr.capacity() << ", size = " << arr.size() << ", time: " << (t2 - t1) << '\n';
 
     std::cout << "Remove element\n";
+    t1 = rdtsc();
     arr.pop_back();
-    std::cout << "capacity = " << arr.capacity() << ", size = " << arr.size() << '\n';
+    t2 = rdtsc();
+    std::cout << "capacity = " << arr.capacity() << ", size = " << arr.size() << ", time: " << (t2 - t1) << '\n';
 
     std::cout << "Shrink ot fit\n";
+    t1 = rdtsc();
     arr.shrink_to_fit();
-    std::cout << "capacity = " << arr.capacity() << ", size = " << arr.size() << '\n';
+    t2 = rdtsc();
+    std::cout << "capacity = " << arr.capacity() << ", size = " << arr.size() << ", time: " << (t2 - t1) << '\n';
+
+    std::cout << successful_reallocs << " of " << realloc_attempts <<
+        " successful reallocations\n";
 }
 ```

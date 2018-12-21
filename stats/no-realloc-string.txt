@@ -1,0 +1,140 @@
+capacity = 4096, size = 4096
+Add element
+capacity = 8192, size = 4097, time: 124588
+Add element
+capacity = 8192, size = 4098, time: 3140
+Add element
+capacity = 8192, size = 4099, time: 96
+Add element
+capacity = 8192, size = 4100, time: 446
+Remove element
+capacity = 8192, size = 4099, time: 84
+Shrink ot fit
+capacity = 4099, size = 4099, time: 89760
+0 of 2 successful reallocations
+capacity = 4096, size = 4096
+Add element
+capacity = 8192, size = 4097, time: 118914
+Add element
+capacity = 8192, size = 4098, time: 2810
+Add element
+capacity = 8192, size = 4099, time: 100
+Add element
+capacity = 8192, size = 4100, time: 96
+Remove element
+capacity = 8192, size = 4099, time: 100
+Shrink ot fit
+capacity = 4099, size = 4099, time: 84994
+0 of 2 successful reallocations
+capacity = 4096, size = 4096
+Add element
+capacity = 8192, size = 4097, time: 119290
+Add element
+capacity = 8192, size = 4098, time: 2382
+Add element
+capacity = 8192, size = 4099, time: 100
+Add element
+capacity = 8192, size = 4100, time: 178
+Remove element
+capacity = 8192, size = 4099, time: 80
+Shrink ot fit
+capacity = 4099, size = 4099, time: 89950
+0 of 2 successful reallocations
+capacity = 4096, size = 4096
+Add element
+capacity = 8192, size = 4097, time: 117594
+Add element
+capacity = 8192, size = 4098, time: 2070
+Add element
+capacity = 8192, size = 4099, time: 98
+Add element
+capacity = 8192, size = 4100, time: 64
+Remove element
+capacity = 8192, size = 4099, time: 92
+Shrink ot fit
+capacity = 4099, size = 4099, time: 89966
+0 of 2 successful reallocations
+capacity = 4096, size = 4096
+Add element
+capacity = 8192, size = 4097, time: 143100
+Add element
+capacity = 8192, size = 4098, time: 1866
+Add element
+capacity = 8192, size = 4099, time: 98
+Add element
+capacity = 8192, size = 4100, time: 102
+Remove element
+capacity = 8192, size = 4099, time: 80
+Shrink ot fit
+capacity = 4099, size = 4099, time: 88978
+0 of 2 successful reallocations
+capacity = 4096, size = 4096
+Add element
+capacity = 8192, size = 4097, time: 118296
+Add element
+capacity = 8192, size = 4098, time: 1864
+Add element
+capacity = 8192, size = 4099, time: 98
+Add element
+capacity = 8192, size = 4100, time: 182
+Remove element
+capacity = 8192, size = 4099, time: 82
+Shrink ot fit
+capacity = 4099, size = 4099, time: 91112
+0 of 2 successful reallocations
+capacity = 4096, size = 4096
+Add element
+capacity = 8192, size = 4097, time: 119214
+Add element
+capacity = 8192, size = 4098, time: 1967
+Add element
+capacity = 8192, size = 4099, time: 98
+Add element
+capacity = 8192, size = 4100, time: 173
+Remove element
+capacity = 8192, size = 4099, time: 68
+Shrink ot fit
+capacity = 4099, size = 4099, time: 93684
+0 of 2 successful reallocations
+capacity = 4096, size = 4096
+Add element
+capacity = 8192, size = 4097, time: 117896
+Add element
+capacity = 8192, size = 4098, time: 1848
+Add element
+capacity = 8192, size = 4099, time: 96
+Add element
+capacity = 8192, size = 4100, time: 150
+Remove element
+capacity = 8192, size = 4099, time: 80
+Shrink ot fit
+capacity = 4099, size = 4099, time: 88498
+0 of 2 successful reallocations
+capacity = 4096, size = 4096
+Add element
+capacity = 8192, size = 4097, time: 116890
+Add element
+capacity = 8192, size = 4098, time: 1816
+Add element
+capacity = 8192, size = 4099, time: 98
+Add element
+capacity = 8192, size = 4100, time: 184
+Remove element
+capacity = 8192, size = 4099, time: 44
+Shrink ot fit
+capacity = 4099, size = 4099, time: 86424
+0 of 2 successful reallocations
+capacity = 4096, size = 4096
+Add element
+capacity = 8192, size = 4097, time: 118542
+Add element
+capacity = 8192, size = 4098, time: 1906
+Add element
+capacity = 8192, size = 4099, time: 96
+Add element
+capacity = 8192, size = 4100, time: 144
+Remove element
+capacity = 8192, size = 4099, time: 80
+Shrink ot fit
+capacity = 4099, size = 4099, time: 92886
+0 of 2 successful reallocations
