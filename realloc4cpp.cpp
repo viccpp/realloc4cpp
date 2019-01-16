@@ -1,7 +1,9 @@
 #include"reallocator.h"
 #include"allocator_traits.h"
+#include<stdexcept>
 #include<utility>
 #include<iterator>
+#include<algorithm>
 #include<cassert>
 
 namespace realloc4cpp {
@@ -45,27 +47,35 @@ public:
     auto begin() const { return begin_; }
     auto end() const { return end_; }
 
-    bool resize(size_type new_capacity, size_type min_new_capacity)
+    size_type additional_capacity(size_type n) const
     {
-        assert(new_capacity >= min_new_capacity);
+        size_type cap = capacity();
+        const size_type cap_remain = max_capacity() - cap;
+        if(n > cap_remain) throw std::length_error("Exceeded max_size()");
+        return std::min(cap, cap_remain);
+    }
+    bool expand_by_at_least(size_type preferred_n, size_type least_n)
+    {
         realloc_attempts++;
-        auto n = new_capacity;
-        if(!A::resize_allocated(*this,
-                begin_, capacity(), n, min_new_capacity))
-            return false;
-        assert(new_capacity > capacity() ?
-            n >= new_capacity || n >= min_new_capacity : true);
-        end_ = begin_ + n;
+        size_type capacity = this->capacity();
+        if(!A::expand_by(*this, begin_,
+            capacity, preferred_n, least_n)) return false;
+        end_ = begin_ + capacity;
         successful_reallocs++;
         return true;
     }
-    bool resize(size_type new_capacity)
+    bool shrink_by(size_type n)
     {
-        return resize(new_capacity, new_capacity);
+        realloc_attempts++;
+        size_type capacity = this->capacity();
+        if(!A::shrink_by(*this, begin_, capacity, n)) return false;
+        end_ = begin_ + capacity;
+        successful_reallocs++;
+        return true;
     }
 
     template<class... Args>
-    void construct(T *p, Args &&... args)
+    void construct(T *p, Args&&... args)
     {
         A::construct(*this, p, std::forward<Args>(args)...);
     }
@@ -74,8 +84,11 @@ public:
     {
         std::swap(begin_, o.begin_);
         std::swap(end_, o.end_);
+        static_assert(typename A::is_always_equal(),
+            "Add swap for the allocator here!");
     }
 
+    size_type max_capacity() const { return ~size_type(0) / sizeof(T); }
     size_type capacity() const { return end_ - begin_; }
 };
 //////////////////////////////////////////////////////////////////////////////
@@ -85,11 +98,6 @@ class autogrow_array
 {
     raw_buffer<T, Allocator> buf;
     T *next = buf.begin();
-    auto new_capacity() const
-    {
-        // TODO: Add your grow algo here
-        return capacity() * 2U;
-    }
 public:
     using value_type = T;
     using allocator_type = Allocator;
@@ -105,6 +113,7 @@ public:
 
     bool empty() const { return next == buf.begin(); }
     size_type size() const { return next - buf.begin(); }
+    size_type max_size() const { return buf.max_capacity(); }
     size_type capacity() const { return buf.capacity(); }
 
     void push_back(T );
@@ -147,16 +156,15 @@ void autogrow_array<T,A>::push_back(T v)
 {
     if(next == buf.end()) // increase capacity first
     {
-        auto desired_capacity = new_capacity();
-        if(buf.resize(desired_capacity, 1))
+        auto add_cap = buf.additional_capacity(1);
+        if(buf.expand_by_at_least(add_cap, 1))
         {
             // AWESOME!!! Buffer was enlarged!
             // No need to move existing elements!
-            assert(capacity() >= desired_capacity);
         }
         else // cannot extend, move the buffer as usual
         {
-            raw_buffer<T,A> new_buf(desired_capacity);
+            raw_buffer<T,A> new_buf(size() + add_cap);
             // Using move even if move-ctr of T can throw for short
             next = std::uninitialized_copy(
                 std::make_move_iterator(buf.begin()),
@@ -174,7 +182,7 @@ template<class T, class A>
 void autogrow_array<T,A>::shrink_to_fit()
 {
     if(size() == capacity()) return;
-    if(buf.resize(size()))
+    if(buf.shrink_by(capacity() - size()))
     {
         // AWESOME!!! Buffer was narrowed!
         // No need to move existing elements!
@@ -212,7 +220,7 @@ int main()
 #if 1
         , reallocator<int>
 #endif
-    > arr(4U << 10);
+    > arr((size_t(16) << 10) / sizeof(int));
     std::cout << "capacity = " << arr.capacity() << ", size = " << arr.size() << '\n';
 
     std::cout << "Add element\n";
@@ -246,6 +254,7 @@ int main()
     std::cout << "capacity = " << arr.capacity() << ", size = " << arr.size() << ", time: " << (t2 - t1) << '\n';
 
     std::cout << "Shrink ot fit\n";
+    //for(int i = 3; i--;) arr.pop_back();
     t1 = rdtsc();
     arr.shrink_to_fit();
     t2 = rdtsc();

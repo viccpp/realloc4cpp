@@ -1,140 +1,140 @@
 capacity = 4096, size = 4096
 Add element
-capacity = 8192, size = 4097, time: 124588
+capacity = 8192, size = 4097, time: 117792
 Add element
-capacity = 8192, size = 4098, time: 3140
+capacity = 8192, size = 4098, time: 2800
 Add element
-capacity = 8192, size = 4099, time: 96
+capacity = 8192, size = 4099, time: 150
 Add element
-capacity = 8192, size = 4100, time: 446
+capacity = 8192, size = 4100, time: 132
 Remove element
-capacity = 8192, size = 4099, time: 84
+capacity = 8192, size = 4099, time: 46
 Shrink ot fit
-capacity = 4099, size = 4099, time: 89760
+capacity = 4099, size = 4099, time: 92140
 0 of 2 successful reallocations
 capacity = 4096, size = 4096
 Add element
-capacity = 8192, size = 4097, time: 118914
+capacity = 8192, size = 4097, time: 115506
 Add element
-capacity = 8192, size = 4098, time: 2810
+capacity = 8192, size = 4098, time: 2154
 Add element
-capacity = 8192, size = 4099, time: 100
+capacity = 8192, size = 4099, time: 152
+Add element
+capacity = 8192, size = 4100, time: 164
+Remove element
+capacity = 8192, size = 4099, time: 86
+Shrink ot fit
+capacity = 4099, size = 4099, time: 87100
+0 of 2 successful reallocations
+capacity = 4096, size = 4096
+Add element
+capacity = 8192, size = 4097, time: 147692
+Add element
+capacity = 8192, size = 4098, time: 2394
+Add element
+capacity = 8192, size = 4099, time: 106
+Add element
+capacity = 8192, size = 4100, time: 132
+Remove element
+capacity = 8192, size = 4099, time: 52
+Shrink ot fit
+capacity = 4099, size = 4099, time: 91216
+0 of 2 successful reallocations
+capacity = 4096, size = 4096
+Add element
+capacity = 8192, size = 4097, time: 115670
+Add element
+capacity = 8192, size = 4098, time: 2552
+Add element
+capacity = 8192, size = 4099, time: 150
 Add element
 capacity = 8192, size = 4100, time: 96
 Remove element
-capacity = 8192, size = 4099, time: 100
+capacity = 8192, size = 4099, time: 54
 Shrink ot fit
-capacity = 4099, size = 4099, time: 84994
+capacity = 4099, size = 4099, time: 93266
 0 of 2 successful reallocations
 capacity = 4096, size = 4096
 Add element
-capacity = 8192, size = 4097, time: 119290
+capacity = 8192, size = 4097, time: 115432
 Add element
-capacity = 8192, size = 4098, time: 2382
+capacity = 8192, size = 4098, time: 2456
 Add element
-capacity = 8192, size = 4099, time: 100
+capacity = 8192, size = 4099, time: 106
 Add element
-capacity = 8192, size = 4100, time: 178
+capacity = 8192, size = 4100, time: 130
 Remove element
-capacity = 8192, size = 4099, time: 80
+capacity = 8192, size = 4099, time: 86
 Shrink ot fit
-capacity = 4099, size = 4099, time: 89950
+capacity = 4099, size = 4099, time: 117312
 0 of 2 successful reallocations
 capacity = 4096, size = 4096
 Add element
-capacity = 8192, size = 4097, time: 117594
+capacity = 8192, size = 4097, time: 115978
 Add element
-capacity = 8192, size = 4098, time: 2070
+capacity = 8192, size = 4098, time: 2800
 Add element
-capacity = 8192, size = 4099, time: 98
+capacity = 8192, size = 4099, time: 116
 Add element
-capacity = 8192, size = 4100, time: 64
+capacity = 8192, size = 4100, time: 166
 Remove element
-capacity = 8192, size = 4099, time: 92
+capacity = 8192, size = 4099, time: 78
 Shrink ot fit
-capacity = 4099, size = 4099, time: 89966
+capacity = 4099, size = 4099, time: 92704
 0 of 2 successful reallocations
 capacity = 4096, size = 4096
 Add element
-capacity = 8192, size = 4097, time: 143100
+capacity = 8192, size = 4097, time: 116404
 Add element
-capacity = 8192, size = 4098, time: 1866
+capacity = 8192, size = 4098, time: 2676
 Add element
-capacity = 8192, size = 4099, time: 98
+capacity = 8192, size = 4099, time: 106
 Add element
-capacity = 8192, size = 4100, time: 102
+capacity = 8192, size = 4100, time: 128
 Remove element
-capacity = 8192, size = 4099, time: 80
+capacity = 8192, size = 4099, time: 84
 Shrink ot fit
-capacity = 4099, size = 4099, time: 88978
+capacity = 4099, size = 4099, time: 116548
 0 of 2 successful reallocations
 capacity = 4096, size = 4096
 Add element
-capacity = 8192, size = 4097, time: 118296
+capacity = 8192, size = 4097, time: 115796
 Add element
-capacity = 8192, size = 4098, time: 1864
+capacity = 8192, size = 4098, time: 2620
 Add element
-capacity = 8192, size = 4099, time: 98
+capacity = 8192, size = 4099, time: 106
 Add element
-capacity = 8192, size = 4100, time: 182
+capacity = 8192, size = 4100, time: 96
 Remove element
-capacity = 8192, size = 4099, time: 82
+capacity = 8192, size = 4099, time: 94
 Shrink ot fit
-capacity = 4099, size = 4099, time: 91112
+capacity = 4099, size = 4099, time: 85180
 0 of 2 successful reallocations
 capacity = 4096, size = 4096
 Add element
-capacity = 8192, size = 4097, time: 119214
+capacity = 8192, size = 4097, time: 116892
 Add element
-capacity = 8192, size = 4098, time: 1967
+capacity = 8192, size = 4098, time: 2568
 Add element
-capacity = 8192, size = 4099, time: 98
+capacity = 8192, size = 4099, time: 122
 Add element
-capacity = 8192, size = 4100, time: 173
+capacity = 8192, size = 4100, time: 100
 Remove element
-capacity = 8192, size = 4099, time: 68
+capacity = 8192, size = 4099, time: 86
 Shrink ot fit
-capacity = 4099, size = 4099, time: 93684
+capacity = 4099, size = 4099, time: 90478
 0 of 2 successful reallocations
 capacity = 4096, size = 4096
 Add element
-capacity = 8192, size = 4097, time: 117896
+capacity = 8192, size = 4097, time: 117628
 Add element
-capacity = 8192, size = 4098, time: 1848
+capacity = 8192, size = 4098, time: 2388
 Add element
-capacity = 8192, size = 4099, time: 96
+capacity = 8192, size = 4099, time: 106
 Add element
-capacity = 8192, size = 4100, time: 150
+capacity = 8192, size = 4100, time: 96
 Remove element
-capacity = 8192, size = 4099, time: 80
+capacity = 8192, size = 4099, time: 42
 Shrink ot fit
-capacity = 4099, size = 4099, time: 88498
-0 of 2 successful reallocations
-capacity = 4096, size = 4096
-Add element
-capacity = 8192, size = 4097, time: 116890
-Add element
-capacity = 8192, size = 4098, time: 1816
-Add element
-capacity = 8192, size = 4099, time: 98
-Add element
-capacity = 8192, size = 4100, time: 184
-Remove element
-capacity = 8192, size = 4099, time: 44
-Shrink ot fit
-capacity = 4099, size = 4099, time: 86424
-0 of 2 successful reallocations
-capacity = 4096, size = 4096
-Add element
-capacity = 8192, size = 4097, time: 118542
-Add element
-capacity = 8192, size = 4098, time: 1906
-Add element
-capacity = 8192, size = 4099, time: 96
-Add element
-capacity = 8192, size = 4100, time: 144
-Remove element
-capacity = 8192, size = 4099, time: 80
-Shrink ot fit
-capacity = 4099, size = 4099, time: 92886
+capacity = 4099, size = 4099, time: 87596
 0 of 2 successful reallocations

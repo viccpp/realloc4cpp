@@ -8,20 +8,21 @@
 namespace realloc4cpp {
 
 //////////////////////////////////////////////////////////////////////////////
-template<class T>
+template<class T, std::size_t Alignment = alignof(T)>
 struct reallocator
 {
     using value_type = T;
     using size_type = std::size_t;
     using is_always_equal = std::true_type;
+    template<class U> struct rebind { using other = reallocator<U>; };
 
     reallocator() = default;
-    template<class U>
-    constexpr reallocator(const reallocator<U> &) noexcept {}
+    template<class U, std::size_t A2>
+    constexpr reallocator(const reallocator<U,A2> &) noexcept {}
 
     [[nodiscard]] T *allocate(size_type n)
     {
-        void *p = je_mallocx(n * sizeof(T), 0);//MALLOCX_ALIGN(alignof(T)));
+        void *p = je_mallocx(n * sizeof(T), MALLOCX_ALIGN(Alignment));
         if(!p) throw std::bad_alloc();
         return static_cast<T*>(p);
     }
@@ -29,28 +30,36 @@ struct reallocator
     {
         je_sdallocx(p, n, 0);
     }
-    [[nodiscard]] bool resize_allocated(T *p,
-        size_type cur_size, size_type &preferred_size, size_type at_least_size)
+    [[nodiscard]] bool expand_by(T *p,
+        size_type &size, size_type preferred_n, size_type least_n)
     {
-        auto new_size_bytes = je_xallocx(p,
-            at_least_size * sizeof(T),
-            (preferred_size - at_least_size) * sizeof(T),
-            0//MALLOCX_ALIGN(alignof(T))
+        const auto old_size = size;
+        const auto new_size_bytes = je_xallocx(p,
+            (old_size + least_n) * sizeof(T),
+            (preferred_n - least_n) * sizeof(T),
+            MALLOCX_ALIGN(Alignment)
         );
-        auto new_size = new_size_bytes / sizeof(T);
-        if(new_size > cur_size)
-        {
-            preferred_size = new_size;
-            return true;
-        }
-        return false;
+        const auto new_size = new_size_bytes / sizeof(T);
+        if(new_size <= old_size) return false;
+        size = new_size;
+        return true;
+    }
+    [[nodiscard]] bool shrink_by(T *p, size_type &size, size_type n)
+    {
+        const auto old_size = size;
+        const auto new_size_bytes = je_xallocx(p,
+            (size - n) * sizeof(T), 0, MALLOCX_ALIGN(Alignment));
+        const auto new_size = new_size_bytes / sizeof(T);
+        if(new_size >= old_size) return false;
+        size = new_size;
+        return true;
     }
 };
 //////////////////////////////////////////////////////////////////////////////
-template<class U, class V>
-inline bool operator==(reallocator<U>, reallocator<V>) { return true; }
-template<class U, class V>
-inline bool operator!=(reallocator<U>, reallocator<V>) { return false; }
+template<class U, std::size_t A1, class V, std::size_t A2>
+inline bool operator==(reallocator<U,A1>, reallocator<V,A2>) { return true; }
+template<class U, std::size_t A1, class V, std::size_t A2>
+inline bool operator!=(reallocator<U,A1>, reallocator<V,A2>) { return false; }
 
 } // namespace
 

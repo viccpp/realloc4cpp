@@ -14,83 +14,42 @@ struct allocator_traits : public std::allocator_traits<Alloc>
     using typename std::allocator_traits<Alloc>::size_type;
 private:
     template<class Alloc2>
-    static auto resize_allocated_at_least(
-        Alloc2 &a, pointer p, size_type cur_size,
-        size_type &preferred_size, size_type at_least_size, int)
-    -> decltype(a.resize_allocated(p, cur_size, preferred_size, at_least_size))
+    static auto expand_by_impl(Alloc2 &a, pointer p, size_type &size,
+        size_type preferred_n, size_type least_n, int)
+    -> decltype(a.expand_by(p, size, preferred_n, least_n))
     {
-        return a.resize_allocated(p, cur_size, preferred_size, at_least_size);
+        return a.expand_by(p, size, preferred_n, least_n);
     }
     template<class Alloc2>
-    static auto resize_allocated_at_least(
-        Alloc2 &a, pointer p, size_type cur_size,
-        size_type &preferred_size, size_type at_least_size, int)
-    -> decltype(a.resize_allocated(p, cur_size, preferred_size))
-    {
-        auto new_size = preferred_size;
-        if(a.resize_allocated(p, cur_size, preferred_size)) return true;
-        if(at_least_size == new_size) return false;
-        preferred_size = at_least_size;
-        return a.resize_allocated(p, cur_size, preferred_size);
-    }
-
-    template<class Alloc2>
-    static bool resize_allocated_at_least(
-        Alloc2 & , pointer , size_type , size_type & , size_type , ...)
+    static bool expand_by_impl(
+        Alloc2 & , pointer , size_type & , size_type , size_type , ...)
     {
         return false;
     }
 
     template<class Alloc2>
-    static auto resize_allocated_exact(
-        Alloc2 &a, pointer p, size_type cur_size, size_type &new_size, int)
-    -> decltype(a.resize_allocated(p, cur_size, new_size))
+    static auto shrink_by_impl(
+        Alloc2 &a, pointer p, size_type &size, size_type n, int)
+    -> decltype(a.shrink_by(p, size, n))
     {
-        return a.resize_allocated(p, cur_size, new_size);
+        return a.shrink_by(p, size, n);
     }
     template<class Alloc2>
-    static bool resize_allocated_exact(
-        Alloc2 &a, pointer p, size_type cur_size, size_type &new_size, ...)
+    static bool shrink_by_impl(
+        Alloc2 & , pointer , size_type & , size_type , ...)
     {
-        return resize_allocated_at_least(a, p, cur_size, new_size, new_size);
+        return false;
     }
 public:
-    // `p` is a pointer to the memory block allocated before
-    // `cur_size` is a current size of the memory block
-    // `new_size` is IN/OUT parameter:
-    //      IN: requested size
-    //     OUT: reallocated size, in case of success (true) returned
-    // Returns:
-    //     false - cannot satisfy this request
-    //      true - memory block was enlarged/narrowed. In case of enlarge-request
-    //             returned `new_size` can be equal or greater than requested
-    // Evaluates and returns the result of the the first
-    // well-formed expession in the following order:
-    //     1) a.resize_allocated(p, cur_size, new_size)
-    //     2) a.resize_allocated(p, cur_size, new_size, new_size)
-    //     3) false
-    [[nodiscard]] static bool resize_allocated(Alloc &a, pointer p,
-        size_type cur_size, size_type &new_size)
+    [[nodiscard]] static bool expand_by(Alloc &a, pointer p,
+        size_type &size, size_type preferred_n, size_type least_n)
     {
-        return resize_allocated_exact(a, p, cur_size, new_size, 0);
+        return expand_by_impl(a, p, size, preferred_n, least_n, 0);
     }
-
-    // Same as above but tries `preferred_size` as a `new_size` first
-    // If failed tries `at_least_size` when  `at_least_size` != `preferred_size`
-    // 1) If expression
-    //    a.resize_allocated(p, cur_size, preferred_size, at_least_size)
-    //    is well-formed calls and returns that;
-    // 2) Otherwise if expession
-    //    a.resize_allocated(p, cur_size, preferred_size)
-    //    is well-formed calls that. If the call failed and
-    //    at_least_size != preferred_size (initial value) assigns
-    //    preferred_size = at_least_size and calls the expression again;
-    // 3) Otherwise returns false.
-    [[nodiscard]] static bool resize_allocated(Alloc &a, pointer p,
-        size_type cur_size, size_type &preferred_size, size_type at_least_size)
+    [[nodiscard]] static bool shrink_by(Alloc &a, pointer p,
+        size_type &size, size_type n)
     {
-        return resize_allocated_at_least(a, p,
-            cur_size, preferred_size, at_least_size, 0);
+        return shrink_by_impl(a, p, size, n, 0);
     }
 };
 //////////////////////////////////////////////////////////////////////////////
