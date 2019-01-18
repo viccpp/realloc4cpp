@@ -14,6 +14,18 @@ struct allocator_traits : public std::allocator_traits<Alloc>
     using typename std::allocator_traits<Alloc>::size_type;
 private:
     template<class Alloc2>
+    static auto allocate_at_least_impl(Alloc2 &a, size_type &n, int)
+    -> decltype(a.allocate_at_least(n))
+    {
+        return a.allocate_at_least(n);
+    }
+    template<class Alloc2>
+    static pointer allocate_at_least_impl(Alloc2 &a, size_type &n, ...)
+    {
+        return a.allocate(n);
+    }
+
+    template<class Alloc2>
     static auto expand_by_impl(Alloc2 &a, pointer p, size_type &size,
         size_type preferred_n, size_type least_n, int)
     -> decltype(a.expand_by(p, size, preferred_n, least_n))
@@ -41,6 +53,10 @@ private:
         return false;
     }
 public:
+    [[nodiscard]] static pointer allocate_at_least(Alloc &a, size_type &n)
+    {
+        return allocate_at_least_impl(a, n, 0);
+    }
     [[nodiscard]] static bool expand_by(Alloc &a, pointer p,
         size_type &size, size_type preferred_n, size_type least_n)
     {

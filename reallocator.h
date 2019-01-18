@@ -26,6 +26,12 @@ struct reallocator
         if(!p) throw std::bad_alloc();
         return static_cast<T*>(p);
     }
+    [[nodiscard]] T *allocate_at_least(size_type &n)
+    {
+        auto *p = allocate(n);
+        n = je_sallocx(p, MALLOCX_ALIGN(Alignment)) / sizeof(T);
+        return p;
+    }
     void deallocate(T *p, size_type n)
     {
         je_sdallocx(p, n, 0);

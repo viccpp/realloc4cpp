@@ -23,7 +23,7 @@ public:
     constexpr raw_buffer() : begin_(nullptr), end_(begin_) {}
     explicit raw_buffer(size_type initial_capacity)
     :
-        begin_(A::allocate(*this, initial_capacity)),
+        begin_(A::allocate_at_least(*this, initial_capacity)),
         end_(begin_ + initial_capacity)
     {
     }

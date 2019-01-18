@@ -3,7 +3,7 @@ Document number: P0894R1
 Audience: Library Evolution Working Group
 Link: https://github.com/2underscores-vic/realloc4cpp/blob/P0894R1/realloc4cpp.md
 Reply to: Victor Dyachenko <__vic@ngs.ru>
-Date: 2019-01-16
+Date: 2019-01-18
 ```
 
 # `realloc()` for C++
@@ -38,7 +38,8 @@ guaranteed that every resize request will be satisfied (it won't usually in
 fact). And what do we do in such case? All we do today! Just fall back to the
 current technics.
 
-One can argue that today system allocators don't support such feature. Well.
+One can argue that today system allocators usually don't support such feature.
+Well.
 
 1. At least custom allocators can benefit right now.
 2. The feature is completely optional, it doesn't affect existing allocators.
@@ -76,7 +77,7 @@ Returned `true` means that:
 
 The main difference with `realloc()`'s behaivour is that an allocator doesn't
 try to move any data, it is a caller's responsibility, the allocator just reports
-the success status.
+success status.
 
 It also can be implemented as a single function, like
 `resize(a, p, cur_size, new_size)`, but such functions internally have code like
@@ -91,7 +92,19 @@ so our approach is more clear and potentially more effective. Moreover when
 this functions are used in `std::vector` or `std::string` we always know
 what we want in every call point: to expand or to shrink.
 
-## [P0401 - Extensions to the Allocator interface](http://www.open-std.org/jtc1/sc22/wg21/docs/papers/2016/p0401r0.html) by Jonathan Wakely (Bonus)
+`shrink_by()` function should return `false` even if the buffer can be shrunk
+in-place but result closer to the requested `n` can be achieved using buffer
+relocation.
+
+## [N3495 - inplace realloc](http://www.open-std.org/jtc1/sc22/wg21/docs/papers/2013/n3495.htm)
+
+This paper proposes the similar idea but the function throws `std::bad_alloc()`
+when resizing is not supported by allocator. I don't find it practical. From
+the user's point of view it usually worths nothing to know about the support
+in principle. The main thing which matters is the result of the resize attempt:
+success or not.
+
+## [P0401 - Extensions to the Allocator interface](http://www.open-std.org/jtc1/sc22/wg21/docs/papers/2016/p0401r0.html) by Jonathan Wakely (Bonus #1)
 
 Jonathan Wakely proposes different extension in his P0401 paper, sort of
 feedback from the allocator - allow allocator to tell the actual size of the
@@ -114,15 +127,23 @@ can round up the requested size.
 Note: The Standard Library allocators operate in terms of `sizeof(T)` elements
 but general purpose memory allocators usually operate in bytes. So it's an open
 question what to do when memory allocator returned a value that isn't a multiple
-of `sizeof(T)`.
+of `sizeof(T)`. Is specifying alignment as `alignas(T)` enough in such cases?
 
-## [N3495 - inplace realloc](http://www.open-std.org/jtc1/sc22/wg21/docs/papers/2013/n3495.htm)
+Actually we can have the same feedback not only for reallocation but for initial
+allocation too in the same way. Just add one more optional function to the
+allocator's interface and make `std::vector` use it via `allocator_traits`:
 
-This paper proposes the similar idea but the function throws `std::bad_alloc()`
-when resizing is not supported by allocator. I don't find it practical. From
-the user's point of view it usually worths nothing to know about the support
-in principle. The main thing which matters is the result of the resize attempt:
-success or not.
+```C++
+template<class Alloc>
+struct std::allocator_traits
+{
+    [[nodiscard]] static pointer allocate_at_least(Alloc &a, size_type &size);
+};
+```
+
+This function calls `a.allocate_at_least(size)` if defined or just
+`a.allocate(size)` otherwise. `size` is an input/output parameter that returns
+the actual allocated size.
 
 ## Usage (code)
 
@@ -136,7 +157,7 @@ void push_back(T v)
 {
     if(next == buf.end()) // increase capacity first
     {
-        if(buf.expand_by_at_least(additional_capacity(1)))
+        if(buf.expand_by_at_least(buf.additional_capacity(1)))
         {
             // AWESOME!!! Buffer was expanded!
             // No need to move existing elements!
@@ -251,13 +272,13 @@ This function calls `a.expand_by(p, size, preferred_n, least_n)` if well-formed.
 In my example for `push_back()` the call
 
 ```C++
-buf.expand_by_at_least(additional_capacity(1))
+buf.expand_by_at_least(buf.additional_capacity(1))
 ```
 
 becomes
 
 ```C++
-buf.expand_by_at_least(additional_capacity(1), 1)
+buf.expand_by_at_least(buf.additional_capacity(1), 1)
 ```
 
 ## Howard Hinnant's stack_alloc and other arena/monotonic allocators
@@ -269,7 +290,7 @@ uses monotonic buffer allocated on the stack and heap is used on its exhaustion.
 When we preallocate 200 bytes buffer for vector of 4-byte `int`s we expect that
 200 / 4 = **50** elements can be allocated on the stack without heap usage. But
 if we run the test (see the link above) we will be disappoined... On my machine
-I discover the buffer exhaustion after inserting the 17th element. Why?
+I discover the buffer exhaustion on insertion of the 17th element. Why?
 
 Because of GNU libstc++ vector's growth strategy and constant buffer relocations.
 vector's capacity is doubled on each reallocation and there is always the moment
@@ -288,7 +309,7 @@ when both old and new buffer occupy a memory. So we have the following picture:
 The buffer is exhaused on attempt to allocate 32 elements. 1+2+4+8+16=31 memory
 cells just can't be reused because `deallocate()` call is a dummy.
 
-If we let the buffer just grow the picture become:
+If we let the buffer just grow the picture becomes:
 
 ```
 +++++++++++++++++++++++++++++++++++++++++++++++++ 50
@@ -317,9 +338,9 @@ or vector always adds `least_n = 1` to every memory request (bonus #2).
 
 ## Existing practice, implementation experience and benchmarks
 
-The functionality is available today in [jemalloc](http://jemalloc.net/)
-allocator. It has `xmallocx()` function that almost literally implements the
-required functionality:
+Required functionality is available today in [jemalloc](http://jemalloc.net/)
+allocator. It has `xmallocx()` function that almost literally implements what
+we need:
 
 ```C
 size_t xallocx(void *ptr, size_t size, size_t extra, int flags);
@@ -509,11 +530,11 @@ only increment for capacity not the total resulting capacity.
 if (this->_M_impl._M_finish != this->_M_impl._M_end_of_storage)
 ```
 
-we replaced it with
+We replaced it with
 
 ```C++
-if (this->_M_impl._M_finish != this->_M_impl._M_end_of_storage
-|| _M_expand_buffer_by(_M_additional_capacity(n), n)))
+if (this->_M_impl._M_finish != this->_M_impl._M_end_of_storage ||
+    _M_expand_buffer_by(_M_additional_capacity(n), n)))
 ```
 
 where `n` is a number of new elements (that is `1` in case of `push_back()`
@@ -531,7 +552,7 @@ was added before the last
 return std::__shrink_to_fit_aux<vector>::_S_do_it(*this);
 ```
 
-Now if we use `reallocator` as an allocator (or replace std::allocator
+Now if we use `reallocator` as an allocator (or replace `std::allocator`
 implementation too) `std::vector` is able to expand and shrink storage
 on `push_back()` and `shrink_to_fit()` calls!
 
@@ -619,6 +640,18 @@ struct allocator_traits : public std::allocator_traits<Alloc>
     using typename std::allocator_traits<Alloc>::size_type;
 private:
     template<class Alloc2>
+    static auto allocate_at_least_impl(Alloc2 &a, size_type &n, int)
+    -> decltype(a.allocate_at_least(n))
+    {
+        return a.allocate_at_least(n);
+    }
+    template<class Alloc2>
+    static pointer allocate_at_least_impl(Alloc2 &a, size_type &n, ...)
+    {
+        return a.allocate(n);
+    }
+
+    template<class Alloc2>
     static auto expand_by_impl(Alloc2 &a, pointer p, size_type &size,
         size_type preferred_n, size_type least_n, int)
     -> decltype(a.expand_by(p, size, preferred_n, least_n))
@@ -646,6 +679,10 @@ private:
         return false;
     }
 public:
+    [[nodiscard]] static pointer allocate_at_least(Alloc &a, size_type &n)
+    {
+        return allocate_at_least_impl(a, n, 0);
+    }
     [[nodiscard]] static bool expand_by(Alloc &a, pointer p,
         size_type &size, size_type preferred_n, size_type least_n)
     {
@@ -692,6 +729,12 @@ struct reallocator
         void *p = je_mallocx(n * sizeof(T), MALLOCX_ALIGN(Alignment));
         if(!p) throw std::bad_alloc();
         return static_cast<T*>(p);
+    }
+    [[nodiscard]] T *allocate_at_least(size_type &n)
+    {
+        auto *p = allocate(n);
+        n = je_sallocx(p, MALLOCX_ALIGN(Alignment)) / sizeof(T);
+        return p;
     }
     void deallocate(T *p, size_type n)
     {
@@ -759,7 +802,7 @@ public:
     constexpr raw_buffer() : begin_(nullptr), end_(begin_) {}
     explicit raw_buffer(size_type initial_capacity)
     :
-        begin_(A::allocate(*this, initial_capacity)),
+        begin_(A::allocate_at_least(*this, initial_capacity)),
         end_(begin_ + initial_capacity)
     {
     }
