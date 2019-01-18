@@ -59,9 +59,9 @@ I propose to extend `std::allocator_traits` with additional functions:
 template<class Alloc>
 struct std::allocator_traits
 {
-    [[nodiscard]] static bool expand_by(
+    [[nodiscard]] static constexpr bool expand_by(
         Alloc &a, pointer p, size_type cur_size, size_type n);
-    [[nodiscard]] static bool shrink_by(
+    [[nodiscard]] static constexpr bool shrink_by(
         Alloc &a, pointer p, size_type cur_size, size_type n);
 };
 ```
@@ -114,9 +114,9 @@ allocated block. It can be combined with the idea from the original proposal:
 template<class Alloc>
 struct std::allocator_traits
 {
-    [[nodiscard]] static bool expand_by(
+    [[nodiscard]] static constexpr bool expand_by(
         Alloc &a, pointer p, size_type &size, size_type n);
-    [[nodiscard]] static bool shrink_by(
+    [[nodiscard]] static constexpr bool shrink_by(
         Alloc &a, pointer p, size_type &size, size_type n);
 };
 ```
@@ -137,7 +137,8 @@ allocator's interface and make `std::vector` use it via `allocator_traits`:
 template<class Alloc>
 struct std::allocator_traits
 {
-    [[nodiscard]] static pointer allocate_at_least(Alloc &a, size_type &size);
+    [[nodiscard]] static constexpr pointer allocate_at_least(
+        Alloc &a, size_type &size);
 };
 ```
 
@@ -260,7 +261,7 @@ The extension can have the following form (all in one):
 template<class Alloc>
 struct std::allocator_traits
 {
-    [[nodiscard]] static bool expand_by(
+    [[nodiscard]] static constexpr bool expand_by(
         Alloc &a, pointer p, size_type &size,
         size_type preferred_n, size_type least_n);
     // shrink_by() is the same
@@ -376,6 +377,12 @@ struct reallocator
         void *p = je_mallocx(n * sizeof(T), MALLOCX_ALIGN(Alignment));
         if(!p) throw std::bad_alloc();
         return static_cast<T*>(p);
+    }
+    [[nodiscard]] T *allocate_at_least(size_type &n)
+    {
+        auto *p = allocate(n);
+        n = je_sallocx(p, MALLOCX_ALIGN(Alignment)) / sizeof(T);
+        return p;
     }
     void deallocate(T *p, size_type n)
     {
@@ -640,55 +647,56 @@ struct allocator_traits : public std::allocator_traits<Alloc>
     using typename std::allocator_traits<Alloc>::size_type;
 private:
     template<class Alloc2>
-    static auto allocate_at_least_impl(Alloc2 &a, size_type &n, int)
+    static constexpr auto allocate_at_least_impl(Alloc2 &a, size_type &n, int)
     -> decltype(a.allocate_at_least(n))
     {
         return a.allocate_at_least(n);
     }
     template<class Alloc2>
-    static pointer allocate_at_least_impl(Alloc2 &a, size_type &n, ...)
+    static constexpr pointer allocate_at_least_impl(Alloc2 &a, size_type &n, ...)
     {
         return a.allocate(n);
     }
 
     template<class Alloc2>
-    static auto expand_by_impl(Alloc2 &a, pointer p, size_type &size,
+    static constexpr auto expand_by_impl(Alloc2 &a, pointer p, size_type &size,
         size_type preferred_n, size_type least_n, int)
     -> decltype(a.expand_by(p, size, preferred_n, least_n))
     {
         return a.expand_by(p, size, preferred_n, least_n);
     }
     template<class Alloc2>
-    static bool expand_by_impl(
+    static constexpr bool expand_by_impl(
         Alloc2 & , pointer , size_type & , size_type , size_type , ...)
     {
         return false;
     }
 
     template<class Alloc2>
-    static auto shrink_by_impl(
+    static constexpr auto shrink_by_impl(
         Alloc2 &a, pointer p, size_type &size, size_type n, int)
     -> decltype(a.shrink_by(p, size, n))
     {
         return a.shrink_by(p, size, n);
     }
     template<class Alloc2>
-    static bool shrink_by_impl(
+    static constexpr bool shrink_by_impl(
         Alloc2 & , pointer , size_type & , size_type , ...)
     {
         return false;
     }
 public:
-    [[nodiscard]] static pointer allocate_at_least(Alloc &a, size_type &n)
+    [[nodiscard]] static constexpr pointer allocate_at_least(
+        Alloc &a, size_type &n)
     {
         return allocate_at_least_impl(a, n, 0);
     }
-    [[nodiscard]] static bool expand_by(Alloc &a, pointer p,
+    [[nodiscard]] static constexpr bool expand_by(Alloc &a, pointer p,
         size_type &size, size_type preferred_n, size_type least_n)
     {
         return expand_by_impl(a, p, size, preferred_n, least_n, 0);
     }
-    [[nodiscard]] static bool shrink_by(Alloc &a, pointer p,
+    [[nodiscard]] static constexpr bool shrink_by(Alloc &a, pointer p,
         size_type &size, size_type n)
     {
         return shrink_by_impl(a, p, size, n, 0);
