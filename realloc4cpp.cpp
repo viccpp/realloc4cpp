@@ -52,6 +52,7 @@ public:
         size_type cap = capacity();
         const size_type cap_remain = max_capacity() - cap;
         if(n > cap_remain) throw std::length_error("Exceeded max_size()");
+        if(cap == 0) cap = n;
         return std::min(cap, cap_remain);
     }
     bool expand_by_at_least(size_type preferred_n, size_type least_n)
@@ -204,11 +205,18 @@ void autogrow_array<T,A>::shrink_to_fit()
 } // namespace
 
 #include<iostream>
+#ifdef _MSC_VER
+#include <intrin.h>
+#endif
 
 inline unsigned long long rdtsc()
 {
     unsigned aux;
+#ifdef _MSC_VER
+    return __rdtscp(&aux);
+#else // GCC
     return __builtin_ia32_rdtscp(&aux);
+#endif
 }
 
 int main()
